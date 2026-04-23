@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Envío Masivo WhatsApp | OSSA & Abogados</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&family=Open+Sans:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    .whatsapp-section {
+      max-width: 800px;
+      margin: 60px auto;
+      padding: 40px;
+      background: var(--white);
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .whatsapp-section h2 {
+      color: var(--navy);
+      margin-bottom: 30px;
+      font-size: 28px;
+    }
+
+    .upload-area {
+      border: 2px dashed var(--navy);
+      border-radius: 8px;
+      padding: 40px;
+      text-align: center;
+      background: var(--blue-bg);
+      cursor: pointer;
+      transition: all var(--transition);
+      margin-bottom: 20px;
+    }
+
+    .upload-area:hover {
+      background: var(--blue-pale);
+      border-color: var(--tan);
+    }
+
+    .upload-area.dragover {
+      border-color: var(--tan);
+      background: var(--blue-pale);
+    }
+
+    .upload-area input[type="file"] {
+      display: none;
+    }
+
+    .upload-icon {
+      font-size: 48px;
+      margin-bottom: 10px;
+    }
+
+    .upload-text {
+      color: var(--text);
+      font-size: 16px;
+      margin: 10px 0;
+    }
+
+    .upload-hint {
+      color: var(--text-light);
+      font-size: 14px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-group label {
+      display: block;
+      color: var(--navy);
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .form-group textarea {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-family: var(--ff-body);
+      font-size: 14px;
+      resize: vertical;
+      min-height: 100px;
+    }
+
+    .phones-preview {
+      background: var(--blue-bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 15px;
+      margin-bottom: 20px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .phones-preview h4 {
+      color: var(--navy);
+      margin-bottom: 10px;
+      font-size: 14px;
+    }
+
+    .phone-tag {
+      display: inline-block;
+      background: var(--navy);
+      color: var(--white);
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      margin: 3px;
+    }
+
+    .btn-send {
+      background: var(--navy);
+      color: var(--white);
+      padding: 12px 30px;
+      border: none;
+      border-radius: 4px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all var(--transition);
+      width: 100%;
+    }
+
+    .btn-send:hover {
+      background: var(--navy-dark);
+      transform: translateY(-2px);
+    }
+
+    .btn-send:disabled {
+      background: var(--text-light);
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .status-message {
+      padding: 15px;
+      border-radius: 4px;
+      margin-top: 20px;
+      display: none;
+    }
+
+    .status-message.success {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+      display: block;
+    }
+
+    .status-message.error {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+      display: block;
+    }
+
+    .status-message.loading {
+      background: #d1ecf1;
+      color: #0c5460;
+      border: 1px solid #bee5eb;
+      display: block;
+    }
+
+    .results-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+      font-size: 14px;
+    }
+
+    .results-table th {
+      background: var(--navy);
+      color: var(--white);
+      padding: 10px;
+      text-align: left;
+      font-weight: 600;
+    }
+
+    .results-table td {
+      padding: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .results-table tr:hover {
+      background: var(--blue-bg);
+    }
+
+    .status-success {
+      color: #28a745;
+      font-weight: 600;
+    }
+
+    .status-error {
+      color: #dc3545;
+      font-weight: 600;
+    }
+
+    .progress-container {
+      margin-top: 20px;
+      display: none;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 20px;
+      background: var(--blue-bg);
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: var(--tan);
+      transition: width 0.3s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--white);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .progress-text {
+      font-size: 14px;
+      color: var(--text);
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header id="header">
+    <nav class="nav">
+      <a href="index.html" class="nav-logo">
+        <span class="logo-main">OSSA <span>&amp;</span> ABOGADOS</span>
+        <span class="logo-sub">Asesores S.A.S.</span>
+      </a>
+      <button class="nav-toggle" id="navToggle" aria-label="Abrir menú">
+        <span></span><span></span><span></span>
+      </button>
+      <ul class="nav-links" id="navLinks">
+        <li><a href="index.html" class="nav-link">Inicio</a></li>
+        <li><a href="servicios.html" class="nav-link">Servicios</a></li>
+        <li><a href="nosotros.html" class="nav-link">Nosotros</a></li>
+        <li><a href="clientes.html" class="nav-link">Clientes</a></li>
+        <li><a href="contacto.html" class="nav-link">Contáctenos</a></li>
+        <li><a href="whatsapp-masivo.html" class="nav-link nav-cta active">WhatsApp Masivo</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main>
+    <section class="whatsapp-section">
+      <h2>📱 Envío Masivo de Mensajes WhatsApp</h2>
+      
+      <form id="whatsappForm">
+        <!-- UPLOAD EXCEL -->
+        <div class="form-group">
+          <label>1. Sube tu archivo Excel</label>
+          <div class="upload-area" id="uploadArea">
+            <div class="upload-icon">📊</div>
+            <div class="upload-text">Arrastra tu archivo Excel aquí o haz clic para seleccionar</div>
+            <div class="upload-hint">Formatos permitidos: .xlsx, .xls, .csv</div>
+            <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" />
+          </div>
+        </div>
+
+        <!-- PREVIEW DE TELÉFONOS -->
+        <div class="form-group" id="phonesPreviewContainer" style="display: none;">
+          <div class="phones-preview">
+            <h4>Números de teléfono extraídos:</h4>
+            <div id="phonesList"></div>
+          </div>
+        </div>
+
+        <!-- MENSAJE PERSONALIZADO -->
+        <div class="form-group">
+          <label>2. Personaliza el mensaje (opcional)</label>
+          <textarea id="messageTemplate" placeholder="Ej: ¡Hola! Te estamos contactando sobre tu cartera. Comunícate con nosotros al: +573185720495&#10;&#10;Dejar en blanco para usar el mensaje por defecto">¡Hola! Te estamos contactando sobre tu cartera. Comunícate con nosotros al: +573185720495</textarea>
+          <small style="color: var(--text-light);">Consejo: Incluye el teléfono de la abogada en el mensaje</small>
+        </div>
+
+        <!-- BOTÓN ENVIAR -->
+        <button type="submit" class="btn-send" id="sendBtn" disabled>
+          📤 Enviar Mensajes Masivos
+        </button>
+
+        <!-- BARRA DE PROGRESO -->
+        <div class="progress-container" id="progressContainer">
+          <div class="progress-bar">
+            <div class="progress-fill" id="progressFill" style="width: 0%">0%</div>
+          </div>
+          <div class="progress-text" id="progressText">Enviando: 0/0</div>
+        </div>
+
+        <!-- MENSAJE DE ESTADO -->
+        <div class="status-message" id="statusMessage"></div>
+
+        <!-- TABLA DE RESULTADOS -->
+        <div id="resultsContainer" style="display: none; margin-top: 30px;">
+          <h3 style="color: var(--navy); margin-bottom: 15px;">Resultados del envío:</h3>
+          <table class="results-table">
+            <thead>
+              <tr>
+                <th>Teléfono</th>
+                <th>Estado</th>
+                <th>Mensaje ID</th>
+              </tr>
+            </thead>
+            <tbody id="resultsBody"></tbody>
+          </table>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <script>
+    const API_URL = 'http://localhost:3001';
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('fileInput');
+    const form = document.getElementById('whatsappForm');
+    const sendBtn = document.getElementById('sendBtn');
+    const statusMessage = document.getElementById('statusMessage');
+    const phonesPreviewContainer = document.getElementById('phonesPreviewContainer');
+    const phonesList = document.getElementById('phonesList');
+    const progressContainer = document.getElementById('progressContainer');
+    const progressFill = document.getElementById('progressFill');
+    const progressText = document.getElementById('progressText');
+    const messageTemplate = document.getElementById('messageTemplate');
+    const resultsContainer = document.getElementById('resultsContainer');
+    const resultsBody = document.getElementById('resultsBody');
+
+    let uploadedPhones = [];
+
+    // ────── DRAG & DROP ──────
+    uploadArea.addEventListener('click', () => fileInput.click());
+
+    uploadArea.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      uploadArea.classList.add('dragover');
+    });
+
+    uploadArea.addEventListener('dragleave', () => {
+      uploadArea.classList.remove('dragover');
+    });
+
+    uploadArea.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadArea.classList.remove('dragover');
+      handleFile(e.dataTransfer.files[0]);
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      handleFile(e.target.files[0]);
+    });
+
+    // ────── PROCESAR ARCHIVO ──────
+    async function handleFile(file) {
+      if (!file) return;
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      showStatus('loading', '⏳ Procesando archivo...');
+      sendBtn.disabled = true;
+
+      try {
+        const response = await fetch(`${API_URL}/api/upload-excel`, {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          uploadedPhones = data.phones;
+          displayPhones(data.phones);
+          showStatus('success', `✅ ${data.message}`);
+          sendBtn.disabled = false;
+          resultsContainer.style.display = 'none';
+        } else {
+          showStatus('error', `❌ Error: ${data.error}`);
+        }
+      } catch (error) {
+        showStatus('error', `❌ Error de conexión: ${error.message}`);
+      }
+    }
+
+    // ────── MOSTRAR TELÉFONOS ──────
+    function displayPhones(phones) {
+      phonesPreviewContainer.style.display = 'block';
+      phonesList.innerHTML = phones.slice(0, 20)
+        .map(phone => `<span class="phone-tag">${phone}</span>`)
+        .join('');
+      
+      if (phones.length > 20) {
+        phonesList.innerHTML += `<span class="phone-tag">... y ${phones.length - 20} más</span>`;
+      }
+    }
+
+    // ────── ENVIAR MENSAJES ──────
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      if (uploadedPhones.length === 0) {
+        showStatus('error', '❌ Por favor sube un archivo Excel primero');
+        return;
+      }
+
+      sendBtn.disabled = true;
+      progressContainer.style.display = 'block';
+      resultsContainer.style.display = 'none';
+      showStatus('loading', '⏳ Enviando mensajes masivos...');
+
+      try {
+        const response = await fetch(`${API_URL}/api/send-messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            phones: uploadedPhones,
+            messageTemplate: messageTemplate.value || undefined
+          })
+        });
+
+        const data = await response.json();
+
+        // Actualizar progreso
+        const successCount = data.summary.successful;
+        const totalCount = data.summary.total;
+        const percentage = Math.round((successCount / totalCount) * 100);
+        
+        progressFill.style.width = percentage + '%';
+        progressFill.textContent = percentage + '%';
+        progressText.textContent = `Enviados: ${successCount}/${totalCount}`;
+
+        if (data.success) {
+          showStatus('success', `✅ Envío completado: ${successCount} enviados, ${data.summary.failed} fallidos`);
+          displayResults(data.results);
+        } else {
+          showStatus('error', `❌ Error: ${data.error}`);
+        }
+      } catch (error) {
+        showStatus('error', `❌ Error de conexión: ${error.message}`);
+      } finally {
+        sendBtn.disabled = false;
+      }
+    });
+
+    // ────── MOSTRAR RESULTADOS ──────
+    function displayResults(results) {
+      resultsContainer.style.display = 'block';
+      resultsBody.innerHTML = results.map(result => `
+        <tr>
+          <td>${result.phone}</td>
+          <td class="status-${result.status}">${result.status === 'enviado' ? '✅ Enviado' : '❌ Error'}</td>
+          <td>${result.messageId || result.error || '-'}</td>
+        </tr>
+      `).join('');
+    }
+
+    // ────── MOSTRAR MENSAJE DE ESTADO ──────
+    function showStatus(type, message) {
+      statusMessage.textContent = message;
+      statusMessage.className = `status-message ${type}`;
+    }
+  </script>
+
+  <script src="script.js"></script>
+</body>
+</html>
