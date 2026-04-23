@@ -1,0 +1,18 @@
+{
+  "name": "pagabogada-whatsapp",
+  "version": "1.0.0",
+  "description": "Sistema de envío masivo de mensajes WhatsApp para cobro de cartera",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "twilio": "^4.10.0",
+    "dotenv": "^16.0.3",
+    "cors": "^2.8.5",
+    "multer": "^1.4.5-lts.1",
+    "xlsx": "^0.18.5"
+  }
+}
