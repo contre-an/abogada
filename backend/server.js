@@ -20,8 +20,19 @@ const port = process.env.PORT || 3001;
 
 // ────── MIDDLEWARE ──────
 app.use(express.json());
+
+const allowedOrigins = (process.env.ALLOWED_ORIGIN || '*')
+  .split(',')
+  .map(o => o.trim());
+
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGIN || '*',
+  origin: (origin, callback) => {
+    if (allowedOrigins.includes('*') || !origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS: origen no permitido: ${origin}`));
+    }
+  },
   credentials: true
 }));
 
@@ -73,10 +84,13 @@ app.post('/api/upload-excel', upload.single('file'), (req, res) => {
       }
     });
 
-    // Formatear números a internacional si no tienen +
-    const formattedPhones = phones.map(phone => 
-      phone.startsWith('+') ? phone : '+57' + phone.replace(/\D/g, '')
-    );
+    // Formatear números a internacional si no tienen +57
+    const formattedPhones = phones.map(phone => {
+      const digits = phone.replace(/\D/g, '');
+      if (phone.startsWith('+')) return '+' + digits;
+      if (digits.startsWith('57') && digits.length >= 12) return '+' + digits;
+      return '+57' + digits;
+    });
 
     res.json({
       success: true,
