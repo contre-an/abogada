@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: abogada
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node server.js
+    plan: starter
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: WWEBJS_AUTH_PATH
+        value: /data
+      - key: LAWYER_PHONE
+        sync: false
+      - key: ALLOWED_ORIGIN
+        sync: false
+    disk:
+      name: wwebjs-auth
+      mountPath: /data
+      sizeGB: 1

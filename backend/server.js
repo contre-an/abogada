@@ -20,10 +20,18 @@ let clientStatus = 'disconnected';
 
 // ────── CLIENTE WHATSAPP ──────
 const client = new Client({
-  authStrategy: new LocalAuth({ dataPath: '.wwebjs_auth' }),
+  authStrategy: new LocalAuth({ dataPath: process.env.WWEBJS_AUTH_PATH || '.wwebjs_auth' }),
   puppeteer: {
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas',
+      '--no-first-run',
+      '--no-zygote',
+      '--disable-gpu'
+    ]
   }
 });
 
