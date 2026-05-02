@@ -1,16 +1,17 @@
 services:
   - type: web
     name: abogada
-    runtime: node
-    rootDir: backend
-    buildCommand: npm install
-    startCommand: node server.js
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
     plan: starter
     envVars:
       - key: NODE_ENV
         value: production
       - key: WWEBJS_AUTH_PATH
         value: /data
+      - key: PUPPETEER_EXECUTABLE_PATH
+        value: /usr/bin/chromium
       - key: LAWYER_PHONE
         sync: false
       - key: ALLOWED_ORIGIN
