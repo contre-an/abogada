@@ -31,10 +31,11 @@ const client = new Client({
       '--disable-accelerated-2d-canvas',
       '--no-first-run',
       '--no-zygote',
-      '--single-process',
       '--disable-gpu',
       '--disable-extensions',
-      '--disable-software-rasterizer'
+      '--disable-software-rasterizer',
+      '--renderer-process-limit=1',
+      '--disable-background-networking'
     ]
   }
 });
