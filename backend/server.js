@@ -31,7 +31,10 @@ const client = new Client({
       '--disable-accelerated-2d-canvas',
       '--no-first-run',
       '--no-zygote',
-      '--disable-gpu'
+      '--single-process',
+      '--disable-gpu',
+      '--disable-extensions',
+      '--disable-software-rasterizer'
     ]
   }
 });
@@ -49,12 +52,26 @@ client.on('ready', () => {
   console.log('WhatsApp conectado y listo para enviar mensajes');
 });
 
-client.on('disconnected', () => {
+client.on('disconnected', (reason) => {
   clientReady = false;
   clientStatus = 'disconnected';
   qrCodeData = null;
-  console.log('WhatsApp desconectado');
-  client.initialize();
+  console.log('WhatsApp desconectado:', reason);
+  setTimeout(() => client.initialize(), 5000);
+});
+
+client.on('auth_failure', (msg) => {
+  clientReady = false;
+  clientStatus = 'auth_failed';
+  console.error('Error de autenticación WhatsApp:', msg);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Error no manejado:', err.message);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Promesa rechazada:', reason);
 });
 
 client.initialize();
