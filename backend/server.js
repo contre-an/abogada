@@ -141,10 +141,17 @@ process.on('unhandledRejection', (reason) => {
 
 // ────── MIDDLEWARE ──────
 app.use(express.json());
+app.use(express.urlencoded({ extended: false })); // permite forms HTML
 
 const allowedOrigins = (process.env.ALLOWED_ORIGIN || '*')
   .split(',')
   .map(o => o.trim());
+
+// Render inyecta RENDER_EXTERNAL_URL automáticamente — lo agregamos para
+// que los forms HTML del propio servidor no sean bloqueados por CORS
+if (process.env.RENDER_EXTERNAL_URL) {
+  allowedOrigins.push(process.env.RENDER_EXTERNAL_URL.replace(/\/$/, ''));
+}
 
 app.use(cors({
   origin: (origin, callback) => {
@@ -170,6 +177,51 @@ const upload = multer({
 });
 
 // ────── RUTAS ──────
+
+/**
+ * GET /api/link?phone=573239277650
+ * Versión para navegador: solicita código y redirige a /api/qr para mostrarlo
+ */
+app.get('/api/link', async (req, res) => {
+  const rawPhone = req.query?.phone;
+  if (!rawPhone) return res.redirect('/api/qr');
+
+  const digits = String(rawPhone).replace(/\D/g, '');
+  if (digits.length < 10 || !sock || clientReady) return res.redirect('/api/qr');
+
+  try {
+    const code = await sock.requestPairingCode(digits);
+    pairingCode = code;
+    clientStatus = 'waiting_pairing';
+    console.log('Código de vinculación generado:', code);
+  } catch (err) {
+    console.error('Error generando pairing code:', err.message);
+  }
+  res.redirect('/api/qr');
+});
+
+/**
+ * GET /api/logout
+ * Versión para navegador (botón de link)
+ */
+app.get('/api/logout', async (req, res) => {
+  try {
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    if (sock) {
+      sock.ev.removeAllListeners();
+      await sock.logout().catch(() => {});
+      sock = null;
+    }
+    clearAuth();
+    clientReady = false;
+    clientStatus = 'disconnected';
+    qrCodeData = null;
+    pairingCode = null;
+    isStarting = false;
+    scheduleRestart(1000);
+  } catch (_) {}
+  res.redirect('/api/qr');
+});
 
 /**
  * POST /api/link
@@ -235,17 +287,15 @@ app.get('/api/qr', async (req, res) => {
           Hubo un conflicto de sesión durante el deploy.<br>
           Haz clic para reiniciar y luego vincula con tu número:
         </p>
-        <form method="POST" action="/api/logout" style="margin-bottom:24px">
-          <button type="submit"
-            style="padding:10px 24px;background:#b45309;color:white;border:none;border-radius:8px;
-                   font-size:16px;cursor:pointer">
-            🔄 Reiniciar sesión
-          </button>
-        </form>
+        <a href="/api/logout"
+          style="display:inline-block;padding:10px 24px;background:#b45309;color:white;
+                 border-radius:8px;font-size:16px;text-decoration:none;margin-bottom:24px">
+          🔄 Reiniciar sesión
+        </a>
         <p style="color:#64748b;font-size:14px">
           Después del reinicio, ingresa tu número para obtener el código de vinculación:
         </p>
-        <form method="POST" action="/api/link" style="margin-top:8px">
+        <form method="GET" action="/api/link" style="margin-top:8px">
           <input name="phone" placeholder="573239277650" required
             style="padding:8px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:16px;width:200px"/>
           <button type="submit"
@@ -289,7 +339,7 @@ app.get('/api/qr', async (req, res) => {
         <p style="color:#475569">WhatsApp → Dispositivos vinculados → Vincular dispositivo</p>
         <img src="${qrImage}" style="width:280px;height:280px;border:4px solid #e2e8f0;border-radius:12px"/>
         <p style="color:#94a3b8;font-size:13px">O usa el método de código:</p>
-        <form method="POST" action="/api/link" style="margin-top:8px">
+        <form method="GET" action="/api/link" style="margin-top:8px">
           <input name="phone" placeholder="573239277650" required
             style="padding:8px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:16px;width:200px"/>
           <button type="submit"
