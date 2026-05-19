@@ -97,12 +97,19 @@ async function startWhatsApp() {
         const isReplaced = statusCode === DisconnectReason.connectionReplaced;
         const isLoggedOut = statusCode === DisconnectReason.loggedOut;
 
-        if (isReplaced || isLoggedOut) {
+        if (isReplaced) {
+          // 405: otra instancia está compitiendo (rolling deploy de Render).
+          // NO reconectar — esperar a que el usuario llame /api/logout o /api/link.
           clearAuth();
           qrCodeData = null;
           pairingCode = null;
-          // 405: espera larga para que muera la otra instancia del rolling deploy
-          scheduleRestart(isReplaced ? 15000 : 3000);
+          clientStatus = 'waiting_user';
+          console.log('Sesión reemplazada (405). Llama POST /api/logout y luego POST /api/link para vincular.');
+        } else if (isLoggedOut) {
+          clearAuth();
+          qrCodeData = null;
+          pairingCode = null;
+          scheduleRestart(3000);
         } else {
           scheduleRestart(5000);
         }
@@ -215,6 +222,39 @@ app.get('/api/qr', async (req, res) => {
       <body style="font-family:sans-serif;text-align:center;padding:40px;background:#f0fdf4">
         <h2 style="color:#16a34a">✅ WhatsApp conectado</h2>
         <p>El sistema está listo para enviar mensajes.</p>
+      </body></html>
+    `);
+  }
+
+  if (clientStatus === 'waiting_user') {
+    return res.send(`
+      <html><head><meta charset="utf-8"></head>
+      <body style="font-family:sans-serif;text-align:center;padding:40px;background:#fef9ec">
+        <h2 style="color:#b45309">⚠️ Reinicio manual requerido</h2>
+        <p style="color:#475569;max-width:440px;margin:16px auto">
+          Hubo un conflicto de sesión durante el deploy.<br>
+          Haz clic para reiniciar y luego vincula con tu número:
+        </p>
+        <form method="POST" action="/api/logout" style="margin-bottom:24px">
+          <button type="submit"
+            style="padding:10px 24px;background:#b45309;color:white;border:none;border-radius:8px;
+                   font-size:16px;cursor:pointer">
+            🔄 Reiniciar sesión
+          </button>
+        </form>
+        <p style="color:#64748b;font-size:14px">
+          Después del reinicio, ingresa tu número para obtener el código de vinculación:
+        </p>
+        <form method="POST" action="/api/link" style="margin-top:8px">
+          <input name="phone" placeholder="573239277650" required
+            style="padding:8px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:16px;width:200px"/>
+          <button type="submit"
+            style="padding:8px 16px;background:#0369a1;color:white;border:none;border-radius:8px;
+                   font-size:16px;cursor:pointer;margin-left:8px">
+            Obtener código
+          </button>
+        </form>
+        <script>setTimeout(() => location.reload(), 6000)</script>
       </body></html>
     `);
   }
