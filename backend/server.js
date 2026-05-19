@@ -56,11 +56,20 @@ async function startWhatsApp() {
       clientReady = false;
       qrCodeData = null;
       const statusCode = lastDisconnect?.error?.output?.statusCode;
-      const loggedOut = statusCode === DisconnectReason.loggedOut;
       console.log('WhatsApp desconectado, código:', statusCode);
-      if (loggedOut) {
-        clientStatus = 'logged_out';
-        console.log('Sesión cerrada. Visita /api/qr para volver a vincular.');
+
+      const shouldClearAuth =
+        statusCode === DisconnectReason.loggedOut ||
+        statusCode === DisconnectReason.connectionReplaced; // 405: sesión reemplazada por otra instancia
+
+      if (shouldClearAuth) {
+        const authPath = process.env.BAILEYS_AUTH_PATH || '.baileys_auth';
+        if (fs.existsSync(authPath)) {
+          fs.rmSync(authPath, { recursive: true, force: true });
+          console.log('Credenciales eliminadas — generando nuevo QR...');
+        }
+        clientStatus = 'disconnected';
+        setTimeout(startWhatsApp, 3000);
       } else {
         clientStatus = 'disconnected';
         console.log('Reconectando en 5s...');
