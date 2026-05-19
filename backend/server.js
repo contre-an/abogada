@@ -143,9 +143,17 @@ app.get('/api/qr', async (req, res) => {
     <body style="font-family:sans-serif;text-align:center;padding:40px;background:#f8fafc">
       <h2 style="color:#1e293b">Vincula tu WhatsApp</h2>
       <p style="color:#475569">En tu teléfono: <strong>WhatsApp → Dispositivos vinculados → Vincular dispositivo</strong></p>
-      <img src="${qrImage}" style="width:280px;height:280px;border:4px solid #e2e8f0;border-radius:12px"/>
-      <p style="color:#94a3b8;font-size:13px">Esta página se recarga automáticamente con el QR más reciente</p>
-      <script>setTimeout(() => location.reload(), 5000)</script>
+      <img src="${qrImage}" style="width:300px;height:300px;border:4px solid #e2e8f0;border-radius:12px"/>
+      <br><br>
+      <button onclick="location.reload()"
+        style="padding:10px 28px;background:#1e293b;color:white;border:none;border-radius:8px;
+               font-size:15px;cursor:pointer;margin-bottom:12px">
+        🔄 Actualizar QR
+      </button>
+      <p style="color:#94a3b8;font-size:12px">
+        Tienes ~40 segundos para escanear. Si expira, haz clic en Actualizar QR.
+      </p>
+      <script>setTimeout(() => location.reload(), 30000)</script>
     </body>
     </html>
   `);
