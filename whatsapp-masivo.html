@@ -430,21 +430,23 @@
 
         const data = await response.json();
 
+        if (!response.ok || !data.success) {
+          showStatus('error', `❌ ${data.error || 'Error al enviar mensajes'}${data.details ? ': ' + data.details : ''}`);
+          progressContainer.style.display = 'none';
+          return;
+        }
+
         // Actualizar progreso
-        const successCount = data.summary.successful;
-        const totalCount = data.summary.total;
-        const percentage = Math.round((successCount / totalCount) * 100);
-        
+        const successCount = data.summary?.successful ?? 0;
+        const totalCount = data.summary?.total ?? uploadedPhones.length;
+        const percentage = totalCount > 0 ? Math.round((successCount / totalCount) * 100) : 0;
+
         progressFill.style.width = percentage + '%';
         progressFill.textContent = percentage + '%';
         progressText.textContent = `Enviados: ${successCount}/${totalCount}`;
 
-        if (data.success) {
-          showStatus('success', `✅ Envío completado: ${successCount} enviados, ${data.summary.failed} fallidos`);
-          displayResults(data.results);
-        } else {
-          showStatus('error', `❌ Error: ${data.error}`);
-        }
+        showStatus('success', `✅ Envío completado: ${successCount} enviados, ${data.summary?.failed ?? 0} fallidos`);
+        displayResults(data.results);
       } catch (error) {
         showStatus('error', `❌ Error de conexión: ${error.message}`);
       } finally {
