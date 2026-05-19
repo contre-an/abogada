@@ -21,65 +21,92 @@ let qrCodeData = null;
 let clientReady = false;
 let clientStatus = 'disconnected';
 let sock = null;
+let reconnectTimer = null;
+let isStarting = false; // guard: evita múltiples startWhatsApp concurrentes
 
 // ────── CLIENTE WHATSAPP ──────
-async function startWhatsApp() {
-  const authPath = process.env.BAILEYS_AUTH_PATH || '.baileys_auth';
-  const { state, saveCreds } = await useMultiFileAuthState(authPath);
-
-  sock = makeWASocket({
-    auth: state,
-    printQRInTerminal: false,
-    logger: pino({ level: 'silent' }),
-    getMessage: async () => undefined,
-  });
-
-  sock.ev.on('creds.update', saveCreds);
-
-  sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect, qr } = update;
-
-    if (qr) {
-      qrCodeData = qr;
-      clientStatus = 'qr_ready';
-      console.log('QR generado — visita /api/qr para vincularlo');
-    }
-
-    if (connection === 'open') {
-      clientReady = true;
-      clientStatus = 'connected';
-      qrCodeData = null;
-      console.log('WhatsApp conectado y listo para enviar mensajes');
-    }
-
-    if (connection === 'close') {
-      clientReady = false;
-      qrCodeData = null;
-      const statusCode = lastDisconnect?.error?.output?.statusCode;
-      console.log('WhatsApp desconectado, código:', statusCode);
-
-      const shouldClearAuth =
-        statusCode === DisconnectReason.loggedOut ||
-        statusCode === DisconnectReason.connectionReplaced; // 405: sesión reemplazada por otra instancia
-
-      if (shouldClearAuth) {
-        const authPath = process.env.BAILEYS_AUTH_PATH || '.baileys_auth';
-        if (fs.existsSync(authPath)) {
-          fs.rmSync(authPath, { recursive: true, force: true });
-          console.log('Credenciales eliminadas — generando nuevo QR...');
-        }
-        clientStatus = 'disconnected';
-        setTimeout(startWhatsApp, 3000);
-      } else {
-        clientStatus = 'disconnected';
-        console.log('Reconectando en 5s...');
-        setTimeout(startWhatsApp, 5000);
-      }
-    }
-  });
+function scheduleRestart(delayMs) {
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    startWhatsApp();
+  }, delayMs);
 }
 
-startWhatsApp().catch(err => console.error('Error iniciando WhatsApp:', err));
+async function startWhatsApp() {
+  if (isStarting) return;
+  isStarting = true;
+
+  // Cerrar socket anterior antes de crear uno nuevo
+  if (sock) {
+    try { sock.ev.removeAllListeners(); } catch (_) {}
+    try { sock.end(); } catch (_) {}
+    sock = null;
+  }
+
+  const authPath = process.env.BAILEYS_AUTH_PATH || '.baileys_auth';
+
+  try {
+    const { state, saveCreds } = await useMultiFileAuthState(authPath);
+
+    sock = makeWASocket({
+      auth: state,
+      printQRInTerminal: false,
+      logger: pino({ level: 'silent' }),
+      getMessage: async () => undefined,
+    });
+
+    isStarting = false;
+
+    sock.ev.on('creds.update', saveCreds);
+
+    sock.ev.on('connection.update', (update) => {
+      const { connection, lastDisconnect, qr } = update;
+
+      if (qr) {
+        qrCodeData = qr;
+        clientStatus = 'qr_ready';
+        console.log('QR generado — visita /api/qr para vincularlo');
+      }
+
+      if (connection === 'open') {
+        clientReady = true;
+        clientStatus = 'connected';
+        qrCodeData = null;
+        console.log('WhatsApp conectado y listo para enviar mensajes');
+      }
+
+      if (connection === 'close') {
+        clientReady = false;
+        clientStatus = 'disconnected';
+        const statusCode = lastDisconnect?.error?.output?.statusCode;
+        console.log('WhatsApp desconectado, código:', statusCode);
+
+        const isReplaced = statusCode === DisconnectReason.connectionReplaced;
+        const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+
+        if (isReplaced || isLoggedOut) {
+          // Limpiar credenciales para arrancar con QR nuevo
+          if (fs.existsSync(authPath)) {
+            fs.rmSync(authPath, { recursive: true, force: true });
+            console.log('Credenciales eliminadas — esperando nuevo QR...');
+          }
+          // Espera más larga en caso de 405 para dejar que la otra instancia muera
+          scheduleRestart(isReplaced ? 10000 : 3000);
+        } else {
+          scheduleRestart(5000);
+        }
+      }
+    });
+
+  } catch (err) {
+    isStarting = false;
+    console.error('Error iniciando WhatsApp:', err.message);
+    scheduleRestart(5000);
+  }
+}
+
+startWhatsApp();
 
 process.on('uncaughtException', (err) => {
   console.error('Error no manejado:', err.message);
