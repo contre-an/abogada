@@ -230,6 +230,55 @@
       color: var(--text);
       margin-top: 10px;
     }
+
+    .wa-status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 18px;
+      border-radius: 8px;
+      margin-bottom: 28px;
+      font-size: 15px;
+      font-weight: 600;
+      border: 2px solid transparent;
+    }
+
+    .wa-status-bar.connected {
+      background: #d4edda;
+      color: #155724;
+      border-color: #c3e6cb;
+    }
+
+    .wa-status-bar.disconnected {
+      background: #fff3cd;
+      color: #856404;
+      border-color: #ffeaa7;
+    }
+
+    .wa-status-bar.checking {
+      background: #d1ecf1;
+      color: #0c5460;
+      border-color: #bee5eb;
+    }
+
+    .btn-connect {
+      background: #1e293b;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 18px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      white-space: nowrap;
+      transition: background 0.2s;
+    }
+
+    .btn-connect:hover {
+      background: #0f172a;
+    }
   </style>
 </head>
 <body>
@@ -258,7 +307,15 @@
   <main>
     <section class="whatsapp-section">
       <h2>📱 Envío Masivo de Mensajes WhatsApp</h2>
-      
+
+      <!-- ESTADO WHATSAPP -->
+      <div class="wa-status-bar checking" id="waStatusBar">
+        <span id="waStatusText">⏳ Verificando conexión WhatsApp...</span>
+        <a id="waConnectBtn" href="#" target="_blank" class="btn-connect" style="display:none">
+          📲 Conectar WhatsApp
+        </a>
+      </div>
+
       <form id="whatsappForm">
         <!-- UPLOAD EXCEL -->
         <div class="form-group">
@@ -337,6 +394,37 @@
     const resultsBody = document.getElementById('resultsBody');
 
     let uploadedContacts = [];
+
+    // ────── ESTADO WHATSAPP ──────
+    const waStatusBar = document.getElementById('waStatusBar');
+    const waStatusText = document.getElementById('waStatusText');
+    const waConnectBtn = document.getElementById('waConnectBtn');
+
+    async function checkWhatsAppStatus() {
+      try {
+        const res = await fetch(`${API_URL}/api/status`);
+        const data = await res.json();
+        if (data.connected) {
+          waStatusBar.className = 'wa-status-bar connected';
+          waStatusText.textContent = '✅ WhatsApp conectado y listo para enviar mensajes';
+          waConnectBtn.style.display = 'none';
+        } else {
+          waStatusBar.className = 'wa-status-bar disconnected';
+          waStatusText.textContent = '⚠️ WhatsApp desconectado — debes vincular el dispositivo';
+          waConnectBtn.href = `${API_URL}/api/qr`;
+          waConnectBtn.style.display = 'inline-block';
+        }
+      } catch {
+        waStatusBar.className = 'wa-status-bar disconnected';
+        waStatusText.textContent = '⚠️ No se pudo verificar el estado de WhatsApp';
+        waConnectBtn.href = `${API_URL}/api/qr`;
+        waConnectBtn.style.display = 'inline-block';
+      }
+    }
+
+    // Verificar al cargar y cada 30 segundos
+    checkWhatsAppStatus();
+    setInterval(checkWhatsAppStatus, 30000);
 
     // ────── DRAG & DROP ──────
     uploadArea.addEventListener('click', () => fileInput.click());
