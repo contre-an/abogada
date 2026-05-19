@@ -1,11 +1,13 @@
 const express = require('express');
-const { Client, LocalAuth } = require('whatsapp-web.js');
+const makeWASocket = require('@whiskeysockets/baileys').default;
+const { useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode');
 const dotenv = require('dotenv');
 const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const XLSX = require('xlsx');
+const pino = require('pino');
 
 dotenv.config();
 
@@ -17,55 +19,57 @@ const lawyerPhone = process.env.LAWYER_PHONE;
 let qrCodeData = null;
 let clientReady = false;
 let clientStatus = 'disconnected';
+let sock = null;
 
 // ────── CLIENTE WHATSAPP ──────
-const client = new Client({
-  authStrategy: new LocalAuth({ dataPath: process.env.WWEBJS_AUTH_PATH || '.wwebjs_auth' }),
-  puppeteer: {
-    headless: true,
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
-      '--no-first-run',
-      '--no-zygote',
-      '--disable-gpu',
-      '--disable-extensions',
-      '--disable-software-rasterizer',
-      '--renderer-process-limit=1',
-      '--disable-background-networking'
-    ]
-  }
-});
+async function startWhatsApp() {
+  const authPath = process.env.BAILEYS_AUTH_PATH || '.baileys_auth';
+  const { state, saveCreds } = await useMultiFileAuthState(authPath);
 
-client.on('qr', (qr) => {
-  qrCodeData = qr;
-  clientStatus = 'qr_ready';
-  console.log('QR generado — visita /api/qr para vincularlo');
-});
+  sock = makeWASocket({
+    auth: state,
+    printQRInTerminal: false,
+    logger: pino({ level: 'silent' }),
+    getMessage: async () => undefined,
+  });
 
-client.on('ready', () => {
-  clientReady = true;
-  clientStatus = 'connected';
-  qrCodeData = null;
-  console.log('WhatsApp conectado y listo para enviar mensajes');
-});
+  sock.ev.on('creds.update', saveCreds);
 
-client.on('disconnected', (reason) => {
-  clientReady = false;
-  clientStatus = 'disconnected';
-  qrCodeData = null;
-  console.log('WhatsApp desconectado:', reason);
-  setTimeout(() => client.initialize(), 5000);
-});
+  sock.ev.on('connection.update', async (update) => {
+    const { connection, lastDisconnect, qr } = update;
 
-client.on('auth_failure', (msg) => {
-  clientReady = false;
-  clientStatus = 'auth_failed';
-  console.error('Error de autenticación WhatsApp:', msg);
-});
+    if (qr) {
+      qrCodeData = qr;
+      clientStatus = 'qr_ready';
+      console.log('QR generado — visita /api/qr para vincularlo');
+    }
+
+    if (connection === 'open') {
+      clientReady = true;
+      clientStatus = 'connected';
+      qrCodeData = null;
+      console.log('WhatsApp conectado y listo para enviar mensajes');
+    }
+
+    if (connection === 'close') {
+      clientReady = false;
+      qrCodeData = null;
+      const statusCode = lastDisconnect?.error?.output?.statusCode;
+      const loggedOut = statusCode === DisconnectReason.loggedOut;
+      console.log('WhatsApp desconectado, código:', statusCode);
+      if (loggedOut) {
+        clientStatus = 'logged_out';
+        console.log('Sesión cerrada. Visita /api/qr para volver a vincular.');
+      } else {
+        clientStatus = 'disconnected';
+        console.log('Reconectando en 5s...');
+        setTimeout(startWhatsApp, 5000);
+      }
+    }
+  });
+}
+
+startWhatsApp().catch(err => console.error('Error iniciando WhatsApp:', err));
 
 process.on('uncaughtException', (err) => {
   console.error('Error no manejado:', err.message);
@@ -74,8 +78,6 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (reason) => {
   console.error('Promesa rechazada:', reason);
 });
-
-client.initialize();
 
 // ────── MIDDLEWARE ──────
 app.use(express.json());
@@ -120,6 +122,17 @@ app.get('/api/qr', async (req, res) => {
       <body style="font-family:sans-serif;text-align:center;padding:40px;background:#f0fdf4">
         <h2 style="color:#16a34a">✅ WhatsApp ya está conectado</h2>
         <p>El sistema está listo para enviar mensajes.</p>
+      </body>
+      </html>
+    `);
+  }
+
+  if (clientStatus === 'logged_out') {
+    return res.send(`
+      <html>
+      <body style="font-family:sans-serif;text-align:center;padding:40px;background:#fef2f2">
+        <h2 style="color:#dc2626">🔒 Sesión cerrada</h2>
+        <p>La sesión fue cerrada desde el teléfono. Reinicia el servidor para generar un nuevo QR.</p>
       </body>
       </html>
     `);
@@ -225,7 +238,7 @@ app.post('/api/send-messages', async (req, res) => {
       return res.status(400).json({ error: 'Lista de teléfonos vacía' });
     }
 
-    if (!clientReady) {
+    if (!clientReady || !sock) {
       return res.status(503).json({
         error: 'WhatsApp no está conectado',
         details: 'Visita /api/qr para vincular el dispositivo primero'
@@ -239,11 +252,11 @@ app.post('/api/send-messages', async (req, res) => {
     for (const phone of phones) {
       try {
         const digits = phone.replace(/\D/g, '');
-        const chatId = `${digits}@c.us`;
+        const jid = `${digits}@s.whatsapp.net`;
         const text = messageTemplate ||
           `¡Hola! Te estamos contactando sobre tu cartera. Comunícate con nosotros al: ${lawyerPhone}`;
 
-        await client.sendMessage(chatId, text);
+        await sock.sendMessage(jid, { text });
 
         results.push({ phone, status: 'enviado', timestamp: new Date() });
         successful++;
