@@ -9,7 +9,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: BAILEYS_AUTH_PATH
-        value: /data
+        value: /data/session
       - key: LAWYER_PHONE
         sync: false
       - key: ALLOWED_ORIGIN

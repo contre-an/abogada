@@ -18,13 +18,25 @@ const lawyerPhone = process.env.LAWYER_PHONE;
 
 // ────── ESTADO WHATSAPP ──────
 let qrCodeData = null;
+let pairingCode = null;
 let clientReady = false;
 let clientStatus = 'disconnected';
 let sock = null;
 let reconnectTimer = null;
-let isStarting = false; // guard: evita múltiples startWhatsApp concurrentes
+let isStarting = false;
 
-// ────── CLIENTE WHATSAPP ──────
+function getAuthPath() {
+  return process.env.BAILEYS_AUTH_PATH || '.baileys_auth';
+}
+
+function clearAuth() {
+  const p = getAuthPath();
+  if (fs.existsSync(p)) {
+    fs.rmSync(p, { recursive: true, force: true });
+    console.log('Credenciales eliminadas.');
+  }
+}
+
 function scheduleRestart(delayMs) {
   if (reconnectTimer) clearTimeout(reconnectTimer);
   reconnectTimer = setTimeout(() => {
@@ -33,21 +45,20 @@ function scheduleRestart(delayMs) {
   }, delayMs);
 }
 
+// ────── CLIENTE WHATSAPP ──────
 async function startWhatsApp() {
   if (isStarting) return;
   isStarting = true;
 
-  // Cerrar socket anterior antes de crear uno nuevo
   if (sock) {
     try { sock.ev.removeAllListeners(); } catch (_) {}
     try { sock.end(); } catch (_) {}
     sock = null;
   }
 
-  const authPath = process.env.BAILEYS_AUTH_PATH || '.baileys_auth';
-
   try {
-    const { state, saveCreds } = await useMultiFileAuthState(authPath);
+    const { state, saveCreds } = await useMultiFileAuthState(getAuthPath());
+    const isRegistered = !!state.creds.registered;
 
     sock = makeWASocket({
       auth: state,
@@ -66,13 +77,14 @@ async function startWhatsApp() {
       if (qr) {
         qrCodeData = qr;
         clientStatus = 'qr_ready';
-        console.log('QR generado — visita /api/qr para vincularlo');
+        console.log('QR generado.');
       }
 
       if (connection === 'open') {
         clientReady = true;
         clientStatus = 'connected';
         qrCodeData = null;
+        pairingCode = null;
         console.log('WhatsApp conectado y listo para enviar mensajes');
       }
 
@@ -86,18 +98,22 @@ async function startWhatsApp() {
         const isLoggedOut = statusCode === DisconnectReason.loggedOut;
 
         if (isReplaced || isLoggedOut) {
-          // Limpiar credenciales para arrancar con QR nuevo
-          if (fs.existsSync(authPath)) {
-            fs.rmSync(authPath, { recursive: true, force: true });
-            console.log('Credenciales eliminadas — esperando nuevo QR...');
-          }
-          // Espera más larga en caso de 405 para dejar que la otra instancia muera
-          scheduleRestart(isReplaced ? 10000 : 3000);
+          clearAuth();
+          qrCodeData = null;
+          pairingCode = null;
+          // 405: espera larga para que muera la otra instancia del rolling deploy
+          scheduleRestart(isReplaced ? 15000 : 3000);
         } else {
           scheduleRestart(5000);
         }
       }
     });
+
+    // Si las credenciales no están registradas, el socket ya puede recibir pairing code
+    if (!isRegistered) {
+      clientStatus = 'waiting_pairing';
+      console.log('Sin sesión activa. Llama POST /api/link con tu número para vincular.');
+    }
 
   } catch (err) {
     isStarting = false;
@@ -149,61 +165,129 @@ const upload = multer({
 // ────── RUTAS ──────
 
 /**
+ * POST /api/link
+ * Solicita un código de 8 dígitos para vincular WhatsApp sin QR.
+ * Body: { "phone": "573239277650" }  (código de país + número, sin +)
+ */
+app.post('/api/link', async (req, res) => {
+  if (clientReady) {
+    return res.json({ success: true, message: 'Ya está conectado.' });
+  }
+
+  const rawPhone = req.body?.phone;
+  if (!rawPhone) {
+    return res.status(400).json({ error: 'Envía { "phone": "57XXXXXXXXXX" } en el body.' });
+  }
+
+  const digits = String(rawPhone).replace(/\D/g, '');
+  if (digits.length < 10) {
+    return res.status(400).json({ error: 'Número inválido. Incluye el código de país, ej: 573239277650' });
+  }
+
+  if (!sock) {
+    return res.status(503).json({ error: 'Socket no inicializado. Espera unos segundos y reintenta.' });
+  }
+
+  try {
+    const code = await sock.requestPairingCode(digits);
+    pairingCode = code;
+    clientStatus = 'waiting_pairing';
+    console.log('Código de vinculación generado:', code);
+    res.json({
+      success: true,
+      code,
+      display: code.replace(/(.{4})(.{4})/, '$1-$2'),
+      instructions: 'En tu teléfono: WhatsApp → Ajustes → Dispositivos vinculados → Vincular con número de teléfono → ingresa el código'
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'No se pudo generar el código', details: err.message });
+  }
+});
+
+/**
  * GET /api/qr
- * Muestra el QR para vincular WhatsApp desde cualquier navegador
+ * Página de vinculación: muestra el código de pairing o el QR según disponibilidad
  */
 app.get('/api/qr', async (req, res) => {
   if (clientReady) {
     return res.send(`
-      <html>
+      <html><head><meta charset="utf-8"></head>
       <body style="font-family:sans-serif;text-align:center;padding:40px;background:#f0fdf4">
-        <h2 style="color:#16a34a">✅ WhatsApp ya está conectado</h2>
+        <h2 style="color:#16a34a">✅ WhatsApp conectado</h2>
         <p>El sistema está listo para enviar mensajes.</p>
-      </body>
-      </html>
+      </body></html>
     `);
   }
 
-  if (clientStatus === 'logged_out') {
+  if (pairingCode) {
+    const display = pairingCode.replace(/(.{4})(.{4})/, '$1-$2');
     return res.send(`
-      <html>
-      <body style="font-family:sans-serif;text-align:center;padding:40px;background:#fef2f2">
-        <h2 style="color:#dc2626">🔒 Sesión cerrada</h2>
-        <p>La sesión fue cerrada desde el teléfono. Reinicia el servidor para generar un nuevo QR.</p>
-      </body>
-      </html>
+      <html><head><meta charset="utf-8"></head>
+      <body style="font-family:sans-serif;text-align:center;padding:40px;background:#f0f9ff">
+        <h2 style="color:#0369a1">🔗 Vincula WhatsApp con este código</h2>
+        <div style="font-size:48px;font-weight:bold;letter-spacing:8px;color:#0c4a6e;
+                    background:#e0f2fe;padding:24px 40px;border-radius:16px;display:inline-block;margin:16px 0">
+          ${display}
+        </div>
+        <p style="color:#475569;max-width:400px;margin:16px auto">
+          En tu teléfono:<br>
+          <strong>WhatsApp → Ajustes → Dispositivos vinculados<br>
+          → Vincular con número de teléfono → ingresa el código</strong>
+        </p>
+        <p style="color:#94a3b8;font-size:13px">Esta página se recarga sola</p>
+        <script>setTimeout(() => location.reload(), 5000)</script>
+      </body></html>
     `);
   }
 
-  if (!qrCodeData) {
+  if (qrCodeData) {
+    const qrImage = await qrcode.toDataURL(qrCodeData);
     return res.send(`
-      <html>
-      <body style="font-family:sans-serif;text-align:center;padding:40px;background:#fffbeb">
-        <h2 style="color:#d97706">⏳ Generando QR...</h2>
-        <p>Espera unos segundos. Esta página se recarga sola.</p>
-        <script>setTimeout(() => location.reload(), 3000)</script>
-      </body>
-      </html>
+      <html><head><meta charset="utf-8"></head>
+      <body style="font-family:sans-serif;text-align:center;padding:40px;background:#f8fafc">
+        <h2 style="color:#1e293b">Escanea para vincular WhatsApp</h2>
+        <p style="color:#475569">WhatsApp → Dispositivos vinculados → Vincular dispositivo</p>
+        <img src="${qrImage}" style="width:280px;height:280px;border:4px solid #e2e8f0;border-radius:12px"/>
+        <p style="color:#94a3b8;font-size:13px">O usa el método de código:</p>
+        <form method="POST" action="/api/link" style="margin-top:8px">
+          <input name="phone" placeholder="573239277650" required
+            style="padding:8px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:16px;width:200px"/>
+          <button type="submit"
+            style="padding:8px 16px;background:#0369a1;color:white;border:none;border-radius:8px;
+                   font-size:16px;cursor:pointer;margin-left:8px">
+            Obtener código
+          </button>
+        </form>
+        <script>setTimeout(() => location.reload(), 5000)</script>
+      </body></html>
     `);
   }
 
-  const qrImage = await qrcode.toDataURL(qrCodeData);
+  // Sin QR ni pairing code todavía
   res.send(`
-    <html>
-    <body style="font-family:sans-serif;text-align:center;padding:40px;background:#f8fafc">
-      <h2 style="color:#1e293b">Vincula tu WhatsApp</h2>
-      <p style="color:#475569">En tu teléfono: <strong>WhatsApp → Dispositivos vinculados → Vincular dispositivo</strong></p>
-      <img src="${qrImage}" style="width:280px;height:280px;border:4px solid #e2e8f0;border-radius:12px"/>
-      <p style="color:#94a3b8;font-size:13px">Esta página se recarga automáticamente con el QR más reciente</p>
-      <script>setTimeout(() => location.reload(), 5000)</script>
-    </body>
-    </html>
+    <html><head><meta charset="utf-8"></head>
+    <body style="font-family:sans-serif;text-align:center;padding:40px;background:#fffbeb">
+      <h2 style="color:#d97706">⏳ Preparando vinculación...</h2>
+      <p style="color:#475569;max-width:400px;margin:16px auto">
+        El servidor está iniciando. En unos segundos podrás vincular tu WhatsApp.<br><br>
+        También puedes solicitar un código ahora:
+      </p>
+      <form method="POST" action="/api/link" style="margin-top:8px">
+        <input name="phone" placeholder="573239277650" required
+          style="padding:8px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:16px;width:200px"/>
+        <button type="submit"
+          style="padding:8px 16px;background:#d97706;color:white;border:none;border-radius:8px;
+                 font-size:16px;cursor:pointer;margin-left:8px">
+          Obtener código
+        </button>
+      </form>
+      <script>setTimeout(() => location.reload(), 4000)</script>
+    </body></html>
   `);
 });
 
 /**
  * GET /api/status
- * Estado actual de la conexión WhatsApp
  */
 app.get('/api/status', (req, res) => {
   res.json({
@@ -217,7 +301,6 @@ app.get('/api/status', (req, res) => {
 
 /**
  * POST /api/upload-excel
- * Sube un archivo Excel y extrae los números de teléfono
  */
 app.post('/api/upload-excel', upload.single('file'), (req, res) => {
   try {
@@ -256,16 +339,12 @@ app.post('/api/upload-excel', upload.single('file'), (req, res) => {
     });
 
   } catch (error) {
-    res.status(500).json({
-      error: 'Error al procesar el archivo',
-      details: error.message
-    });
+    res.status(500).json({ error: 'Error al procesar el archivo', details: error.message });
   }
 });
 
 /**
  * POST /api/send-messages
- * Envía mensajes masivos a una lista de números
  */
 app.post('/api/send-messages', async (req, res) => {
   try {
@@ -302,7 +381,6 @@ app.post('/api/send-messages', async (req, res) => {
         failed++;
       }
 
-      // Pausa de 1s entre envíos para evitar bloqueos de WhatsApp
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
@@ -313,35 +391,30 @@ app.post('/api/send-messages', async (req, res) => {
     });
 
   } catch (error) {
-    res.status(500).json({
-      error: 'Error al enviar mensajes',
-      details: error.message
-    });
+    res.status(500).json({ error: 'Error al enviar mensajes', details: error.message });
   }
 });
 
 /**
  * POST /api/logout
- * Cierra la sesión de WhatsApp y limpia las credenciales guardadas
  */
 app.post('/api/logout', async (req, res) => {
   try {
+    if (reconnectTimer) clearTimeout(reconnectTimer);
     if (sock) {
       sock.ev.removeAllListeners();
       await sock.logout().catch(() => {});
       sock = null;
     }
 
-    const authPath = process.env.BAILEYS_AUTH_PATH || '.baileys_auth';
-    if (fs.existsSync(authPath)) {
-      fs.rmSync(authPath, { recursive: true, force: true });
-    }
-
+    clearAuth();
     clientReady = false;
     clientStatus = 'disconnected';
     qrCodeData = null;
+    pairingCode = null;
+    isStarting = false;
 
-    setTimeout(startWhatsApp, 1000);
+    scheduleRestart(1000);
 
     res.json({ success: true, message: 'Sesión cerrada. Visita /api/qr para vincular de nuevo.' });
   } catch (error) {
@@ -351,7 +424,6 @@ app.post('/api/logout', async (req, res) => {
 
 /**
  * GET /api/test
- * Verifica que el servidor está activo
  */
 app.get('/api/test', (req, res) => {
   res.json({
@@ -372,5 +444,5 @@ app.use((err, req, res, next) => {
 app.listen(port, () => {
   console.log(`Servidor ejecutándose en http://localhost:${port}`);
   console.log(`Teléfono de la abogada: ${lawyerPhone}`);
-  console.log(`Visita http://localhost:${port}/api/qr para vincular WhatsApp`);
+  console.log(`Vinculación: POST /api/link con { phone: "57XXXXXXXXXX" }`);
 });
