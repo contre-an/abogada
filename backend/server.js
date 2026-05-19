@@ -6,6 +6,7 @@ const dotenv = require('dotenv');
 const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 const XLSX = require('xlsx');
 const pino = require('pino');
 
@@ -280,6 +281,35 @@ app.post('/api/send-messages', async (req, res) => {
       error: 'Error al enviar mensajes',
       details: error.message
     });
+  }
+});
+
+/**
+ * POST /api/logout
+ * Cierra la sesión de WhatsApp y limpia las credenciales guardadas
+ */
+app.post('/api/logout', async (req, res) => {
+  try {
+    if (sock) {
+      sock.ev.removeAllListeners();
+      await sock.logout().catch(() => {});
+      sock = null;
+    }
+
+    const authPath = process.env.BAILEYS_AUTH_PATH || '.baileys_auth';
+    if (fs.existsSync(authPath)) {
+      fs.rmSync(authPath, { recursive: true, force: true });
+    }
+
+    clientReady = false;
+    clientStatus = 'disconnected';
+    qrCodeData = null;
+
+    setTimeout(startWhatsApp, 1000);
+
+    res.json({ success: true, message: 'Sesión cerrada. Visita /api/qr para vincular de nuevo.' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al cerrar sesión', details: error.message });
   }
 });
 
