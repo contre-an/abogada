@@ -94,17 +94,20 @@ async function startWhatsApp() {
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         console.log('WhatsApp desconectado, código:', statusCode);
 
-        const isReplaced = statusCode === DisconnectReason.connectionReplaced;
         const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+        // DisconnectReason.connectionReplaced = 440 en Baileys,
+        // pero WhatsApp también envía 405 con el mismo significado
+        const isRejected = statusCode === DisconnectReason.connectionReplaced
+          || statusCode === 405;
 
-        if (isReplaced) {
-          // 405: otra instancia está compitiendo (rolling deploy de Render).
-          // NO reconectar — esperar a que el usuario llame /api/logout o /api/link.
+        if (isRejected) {
+          // Conexión rechazada por WhatsApp: detener reconexión automática.
+          // El usuario debe reiniciar manualmente desde /api/qr.
           clearAuth();
           qrCodeData = null;
           pairingCode = null;
           clientStatus = 'waiting_user';
-          console.log('Sesión reemplazada (405). Llama POST /api/logout y luego POST /api/link para vincular.');
+          console.log(`Conexión rechazada (${statusCode}). Ve a /api/qr para reiniciar manualmente.`);
         } else if (isLoggedOut) {
           clearAuth();
           qrCodeData = null;
