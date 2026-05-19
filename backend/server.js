@@ -175,7 +175,9 @@ app.get('/api/status', (req, res) => {
 
 /**
  * POST /api/upload-excel
- * Sube un archivo Excel y extrae los números de teléfono
+ * Extrae contactos del Excel: teléfono (col TELEFONOS), nombre (col NOMBRE),
+ * intermediario (col INTERMEDIARIO). Si no existen esas columnas busca
+ * cualquier valor de 10 dígitos como fallback.
  */
 app.post('/api/upload-excel', upload.single('file'), (req, res) => {
   try {
@@ -188,29 +190,52 @@ app.post('/api/upload-excel', upload.single('file'), (req, res) => {
     const worksheet = workbook.Sheets[sheetName];
     const data = XLSX.utils.sheet_to_json(worksheet);
 
-    const phones = [];
+    function formatPhone(raw) {
+      const digits = String(raw).replace(/\D/g, '');
+      if (String(raw).startsWith('+')) return '+' + digits;
+      if (digits.startsWith('57') && digits.length >= 12) return '+' + digits;
+      if (digits.length === 10) return '+57' + digits;
+      return null;
+    }
+
+    function findKey(row, ...keywords) {
+      return Object.keys(row).find(k =>
+        keywords.some(kw => k.toUpperCase().includes(kw))
+      );
+    }
+
+    const contacts = [];
     data.forEach(row => {
-      for (let key in row) {
-        const value = String(row[key]).trim();
-        if (/^\+?[0-9]{10,15}$/.test(value)) {
-          phones.push(value);
-          break;
+      const phoneKey = findKey(row, 'TELEFON', 'CELULAR', 'MOVIL', 'PHONE');
+      const nombreKey = findKey(row, 'NOMBRE', 'NAME');
+      const intermediarioKey = findKey(row, 'INTERMEDIAR');
+
+      let phone = null;
+      if (phoneKey) {
+        phone = formatPhone(row[phoneKey]);
+      } else {
+        // fallback: primer valor de exactamente 10 dígitos
+        for (const key of Object.keys(row)) {
+          const digits = String(row[key]).replace(/\D/g, '');
+          if (digits.length === 10) { phone = '+57' + digits; break; }
         }
       }
-    });
 
-    const formattedPhones = phones.map(phone => {
-      const digits = phone.replace(/\D/g, '');
-      if (phone.startsWith('+')) return '+' + digits;
-      if (digits.startsWith('57') && digits.length >= 12) return '+' + digits;
-      return '+57' + digits;
+      if (!phone) return;
+
+      contacts.push({
+        phone,
+        nombre: nombreKey ? String(row[nombreKey]).trim() : '',
+        intermediario: intermediarioKey ? String(row[intermediarioKey]).trim() : ''
+      });
     });
 
     res.json({
       success: true,
-      total: formattedPhones.length,
-      phones: formattedPhones,
-      message: `Se extrajeron ${formattedPhones.length} números de teléfono`
+      total: contacts.length,
+      contacts,
+      phones: contacts.map(c => c.phone), // compatibilidad legado
+      message: `Se extrajeron ${contacts.length} contactos`
     });
 
   } catch (error) {
@@ -221,16 +246,28 @@ app.post('/api/upload-excel', upload.single('file'), (req, res) => {
   }
 });
 
+const DEFAULT_TEMPLATE =
+  'Señor/a {NOMBRE}, le escribe Luisa Fernanda Ossa, abogada externa de FINAGRO, ' +
+  'me gustaría comentarle las alternativas de pago disponibles respecto a la obligación ' +
+  'vencida que tiene con {INTERMEDIARIO}, comuníquese al número 3237448184 o vía WhatsApp ' +
+  'a este mismo número.';
+
 /**
  * POST /api/send-messages
- * Envía mensajes masivos a una lista de números
+ * Envía mensajes masivos. Acepta contacts[] (con nombre/intermediario) o phones[] (legado).
  */
 app.post('/api/send-messages', async (req, res) => {
   try {
-    const { phones, messageTemplate } = req.body;
+    const { contacts, phones, messageTemplate } = req.body;
 
-    if (!phones || !Array.isArray(phones) || phones.length === 0) {
-      return res.status(400).json({ error: 'Lista de teléfonos vacía' });
+    // Normalizar a array de contactos
+    let contactList = [];
+    if (contacts && Array.isArray(contacts) && contacts.length > 0) {
+      contactList = contacts;
+    } else if (phones && Array.isArray(phones) && phones.length > 0) {
+      contactList = phones.map(p => ({ phone: p, nombre: '', intermediario: '' }));
+    } else {
+      return res.status(400).json({ error: 'Lista de contactos vacía' });
     }
 
     if (!clientReady) {
@@ -240,16 +277,19 @@ app.post('/api/send-messages', async (req, res) => {
       });
     }
 
+    const template = messageTemplate || DEFAULT_TEMPLATE;
     const results = [];
     let successful = 0;
     let failed = 0;
 
-    for (const phone of phones) {
+    for (const contact of contactList) {
+      const phone = contact.phone || contact;
       try {
-        const digits = phone.replace(/\D/g, '');
+        const digits = String(phone).replace(/\D/g, '');
         const chatId = `${digits}@c.us`;
-        const text = messageTemplate ||
-          `¡Hola! Te estamos contactando sobre tu cartera. Comunícate con nosotros al: ${lawyerPhone}`;
+        const text = template
+          .replace(/\{NOMBRE\}/gi, contact.nombre || '')
+          .replace(/\{INTERMEDIARIO\}/gi, contact.intermediario || '');
 
         await client.sendMessage(chatId, text);
 
@@ -266,7 +306,7 @@ app.post('/api/send-messages', async (req, res) => {
 
     res.json({
       success: true,
-      summary: { total: phones.length, successful, failed },
+      summary: { total: contactList.length, successful, failed },
       results
     });
 

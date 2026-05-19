@@ -282,8 +282,8 @@
         <!-- MENSAJE PERSONALIZADO -->
         <div class="form-group">
           <label>2. Personaliza el mensaje (opcional)</label>
-          <textarea id="messageTemplate" placeholder="Ej: ¡Hola! Te estamos contactando sobre tu cartera. Comunícate con nosotros al: +573185720495&#10;&#10;Dejar en blanco para usar el mensaje por defecto">¡Hola! Te estamos contactando sobre tu cartera. Comunícate con nosotros al: +573185720495</textarea>
-          <small style="color: var(--text-light);">Consejo: Incluye el teléfono de la abogada en el mensaje</small>
+          <textarea id="messageTemplate" placeholder="Dejar en blanco para usar el mensaje por defecto">Señor/a {NOMBRE}, le escribe Luisa Fernanda Ossa, abogada externa de FINAGRO, me gustaría comentarle las alternativas de pago disponibles respecto a la obligación vencida que tiene con {INTERMEDIARIO}, comuníquese al número 3237448184 o vía WhatsApp a este mismo número.</textarea>
+          <small style="color: var(--text-light);">Usa <strong>{NOMBRE}</strong> y <strong>{INTERMEDIARIO}</strong> para personalizar el mensaje por contacto.</small>
         </div>
 
         <!-- BOTÓN ENVIAR -->
@@ -336,7 +336,7 @@
     const resultsContainer = document.getElementById('resultsContainer');
     const resultsBody = document.getElementById('resultsBody');
 
-    let uploadedPhones = [];
+    let uploadedContacts = [];
 
     // ────── DRAG & DROP ──────
     uploadArea.addEventListener('click', () => fileInput.click());
@@ -379,8 +379,8 @@
         const data = await response.json();
 
         if (data.success) {
-          uploadedPhones = data.phones;
-          displayPhones(data.phones);
+          uploadedContacts = data.contacts || data.phones.map(p => ({ phone: p, nombre: '', intermediario: '' }));
+          displayContacts(uploadedContacts);
           showStatus('success', `✅ ${data.message}`);
           sendBtn.disabled = false;
           resultsContainer.style.display = 'none';
@@ -392,15 +392,16 @@
       }
     }
 
-    // ────── MOSTRAR TELÉFONOS ──────
-    function displayPhones(phones) {
+    // ────── MOSTRAR CONTACTOS ──────
+    function displayContacts(contacts) {
       phonesPreviewContainer.style.display = 'block';
-      phonesList.innerHTML = phones.slice(0, 20)
-        .map(phone => `<span class="phone-tag">${phone}</span>`)
-        .join('');
-      
-      if (phones.length > 20) {
-        phonesList.innerHTML += `<span class="phone-tag">... y ${phones.length - 20} más</span>`;
+      const preview = contacts.slice(0, 20);
+      phonesList.innerHTML = preview.map(c => {
+        const label = c.nombre ? `${c.nombre} — ${c.phone}` : c.phone;
+        return `<span class="phone-tag">${label}</span>`;
+      }).join('');
+      if (contacts.length > 20) {
+        phonesList.innerHTML += `<span class="phone-tag">... y ${contacts.length - 20} más</span>`;
       }
     }
 
@@ -408,7 +409,7 @@
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
 
-      if (uploadedPhones.length === 0) {
+      if (uploadedContacts.length === 0) {
         showStatus('error', '❌ Por favor sube un archivo Excel primero');
         return;
       }
@@ -423,7 +424,7 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            phones: uploadedPhones,
+            contacts: uploadedContacts,
             messageTemplate: messageTemplate.value || undefined
           })
         });
@@ -438,7 +439,7 @@
 
         // Actualizar progreso
         const successCount = data.summary?.successful ?? 0;
-        const totalCount = data.summary?.total ?? uploadedPhones.length;
+        const totalCount = data.summary?.total ?? uploadedContacts.length;
         const percentage = totalCount > 0 ? Math.round((successCount / totalCount) * 100) : 0;
 
         progressFill.style.width = percentage + '%';
